@@ -17,7 +17,6 @@ const props = defineProps({
   upComingData: Array,
 });
 const emit = defineEmits(['updateCount']);
-console.log(props.upComingData);
 let hoverItem = ref(null);
 const itemsWithHeaders = computed(() => {
   return props.upComingData.map((text, index) => ({
