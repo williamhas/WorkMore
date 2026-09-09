@@ -1,9 +1,14 @@
 <template>
   <div class="container">
-    <div v-for="(item, index) in itemsWithHeaders" :key="index" class="box" @mouseover="hoverItem = index"
-      @mouseout="hoverItem = null" :class="{ 'hovered': hoverItem === index }">
-      <h3>{{ item.header }}</h3>
-      <p>{{ item.text }}</p>
+    <div class="header-text">
+      <h1>Upcoming days</h1>
+    </div>
+    <div class="days-container">
+      <div v-for="(item, index) in itemsWithHeaders" :key="index" class="box" @mouseover="hoverItem = index"
+        @mouseout="hoverItem = null" :class="{ 'hovered': hoverItem === index }">
+        <h3>{{ item.header }}</h3>
+        <p>{{ item.text }}</p>
+      </div>
     </div>
     <button type="button" @click="incrementCount">count is {{ props.count }}</button>
   </div>
@@ -17,7 +22,6 @@ const props = defineProps({
   upComingData: Array,
 });
 const emit = defineEmits(['updateCount']);
-console.log(props.upComingData);
 let hoverItem = ref(null);
 const itemsWithHeaders = computed(() => {
   return props.upComingData.map((text, index) => ({
@@ -59,7 +63,6 @@ const headers = [
 ];
 
 watch(() => props.upComingData, (newData) => {
-  console.log(newData);
   itemsWithHeaders.value = newData.map((text, index) => ({
     header: headers[index],
     text: text,
@@ -70,8 +73,13 @@ watch(() => props.upComingData, (newData) => {
 
 <style scoped>
 .container {
+  
+}
+
+.days-container {
   display: flex;
   gap: 10px;
+  flex-wrap: wrap;
 }
 
 .box {
