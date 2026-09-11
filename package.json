@@ -10,8 +10,9 @@
   },
   "dependencies": {
     "primeicons": "^7.0.0",
-    "primevue": "^4.0.0-rc.2",
+    "primevue": "^4.5.5",
     "vue": "^3.4.21",
+    "vue-router": "^4.6.4",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

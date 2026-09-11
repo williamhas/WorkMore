@@ -1,6 +1,5 @@
 <template>
     <div class="container">
-      <p>Count from parent component: {{ count }}</p>
       <input type="file" @change="handleFileUpload" />
     </div>
   </template>
@@ -9,7 +8,6 @@
 import { ref } from 'vue';
 import * as XLSX from 'xlsx';
 const props = defineProps({
-    count: Number,
     weekNumber: Number,
 });
 

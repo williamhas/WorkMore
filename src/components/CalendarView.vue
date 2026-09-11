@@ -2,7 +2,11 @@
     <div class="container calendar">
         <div class="cal-head">
             <h1>Calendar</h1>
-            <span class="week-label">{{ rangeLabel }} &middot; program week {{ weekNumber }}</span>
+            <span class="week-label">{{ rangeLabel }} &middot; program week {{ shownWeekNumber }}</span>
+            <div class="nav">
+                <button class="arrow" type="button" aria-label="Previous week" @click="shiftWeek(-1)">&lsaquo;</button>
+                <button class="arrow" type="button" aria-label="Next week" @click="shiftWeek(1)">&rsaquo;</button>
+            </div>
         </div>
 
         <div class="cal-scroll">
@@ -17,7 +21,8 @@
                 <!-- untimed row -->
                 <div class="corner allday-corner">all day</div>
                 <div v-for="day in days" :key="'a-' + day.key" class="allday-cell" :class="{ today: day.isToday }">
-                    <div v-for="(ev, i) in day.allDay" :key="i" class="chip" :title="ev.title">{{ ev.title }}</div>
+                    <div v-for="(ev, i) in day.allDay" :key="i" class="chip" :class="{ typed: ev.color }"
+                        :style="ev.color ? { '--type': ev.color } : null" :title="eventTooltip(ev)">{{ ev.title }}</div>
                 </div>
 
                 <!-- hour labels -->
@@ -29,8 +34,9 @@
                 <div v-for="day in days" :key="'c-' + day.key" class="day-col" :class="{ today: day.isToday }">
                     <div v-for="h in hours" :key="h" class="hour-cell"></div>
 
-                    <div v-for="(ev, i) in day.timed" :key="i" class="event" :style="eventStyle(ev)"
-                        :title="ev.timeLabel + ' ' + ev.title">
+                    <div v-for="(ev, i) in day.timed" :key="i" class="event" :class="{ typed: ev.color }"
+                        :style="eventStyle(ev)"
+                        :title="eventTooltip(ev)">
                         <span class="event-time">{{ ev.timeLabel }}</span>
                         <span class="event-title">{{ ev.title }}</span>
                     </div>
@@ -40,20 +46,130 @@
                 </div>
             </div>
         </div>
+
+        <div class="cal-foot">
+            <button class="add-btn" type="button" @click="openAdd">+ Add to calendar</button>
+        </div>
+
+        <Teleport to="body">
+            <div v-if="showAdd" class="overlay" @click.self="closeAdd" @keydown.esc="closeAdd">
+                <form class="dialog" role="dialog" aria-modal="true" aria-labelledby="add-event-heading" novalidate
+                    @submit.prevent="submitAdd">
+                    <h2 id="add-event-heading">Add to calendar</h2>
+
+                    <div class="mode-tabs" role="tablist" aria-label="What to add">
+                        <button type="button" role="tab" class="mode-tab" :class="{ on: form.mode === 'new' }"
+                            :aria-selected="form.mode === 'new'" @click="setMode('new')">New activity</button>
+                        <button type="button" role="tab" class="mode-tab" :class="{ on: form.mode === 'module' }"
+                            :aria-selected="form.mode === 'module'" @click="setMode('module')">From module</button>
+                    </div>
+
+                    <!-- A module placement starts from the module; nothing else is shown until one is picked. -->
+                    <template v-if="form.mode === 'module'">
+                        <p v-if="!modules.length" class="mode-empty">
+                            No modules yet. Create one in the Modules view, then place it from here.
+                        </p>
+
+                        <template v-else>
+                            <label class="field">
+                                <span>Module</span>
+                                <select ref="moduleSelect" v-model="form.moduleId" @change="applyModule">
+                                    <option value="" disabled>Choose a module</option>
+                                    <option v-for="m in modules" :key="m.id" :value="m.id">{{ m.title }}</option>
+                                </select>
+                            </label>
+
+                            <div v-if="chosenModule" class="module-summary">
+                                <span class="summary-label">Type</span>
+                                <span v-if="chosenModuleType" class="type-pill"
+                                    :style="{ '--type': chosenModuleType.color }">{{ chosenModuleType.name }}</span>
+                                <span v-else class="summary-none">No type</span>
+                                <span class="summary-note">set by the module</span>
+                            </div>
+                        </template>
+                    </template>
+
+                    <template v-if="form.mode === 'new' || chosenModule">
+                        <label class="field">
+                            <span>Header</span>
+                            <input ref="titleInput" v-model="form.title" type="text" placeholder="e.g. Intervaller 6x800m" />
+                        </label>
+
+                        <label class="field">
+                            <span>Date</span>
+                            <input v-model="form.date" type="date" />
+                        </label>
+
+                        <div v-if="form.mode === 'module'" class="option">
+                            <button type="button" role="switch" class="switch" :aria-checked="form.timed"
+                                @click="form.timed = !form.timed">
+                                <span class="switch-track"><span class="switch-knob"></span></span>
+                                <span>Specific time</span>
+                            </button>
+                            <span class="option-hint">{{ form.timed ? 'Only for this day' : 'Shown as all day' }}</span>
+                        </div>
+
+                        <div v-if="form.mode === 'new' || form.timed" class="field-row">
+                            <label class="field">
+                                <span>From</span>
+                                <input v-model="form.start" type="time" />
+                            </label>
+                            <label class="field">
+                                <span>To</span>
+                                <input v-model="form.end" type="time" />
+                            </label>
+                        </div>
+
+                        <label v-if="form.mode === 'new'" class="field">
+                            <span>
+                                Type
+                                <i v-if="formTypeColor" class="swatch" :style="{ background: formTypeColor }"></i>
+                            </span>
+                            <select v-model="form.typeId">
+                                <option value="">No type</option>
+                                <option v-for="t in types" :key="t.id" :value="t.id">{{ t.name }}</option>
+                            </select>
+                        </label>
+
+                        <label class="field">
+                            <span>Description</span>
+                            <textarea v-model="form.description" rows="4" placeholder="Details, notes, links..."></textarea>
+                        </label>
+                    </template>
+
+                    <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
+
+                    <div class="dialog-actions">
+                        <button type="button" class="btn-secondary" @click="closeAdd">Cancel</button>
+                        <button type="submit" class="btn-primary" :disabled="form.mode === 'module' && !modules.length">
+                            Add
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </Teleport>
     </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
+import { activitiesOn } from '../planner.js';
 
 const props = defineProps({
     weekNumber: Number,
     // Accepts plain strings (one per day, starting today - what Importcal emits)
-    // or objects: { title, date|day, start, end }
+    // or objects: { title, date|day, start, end, description, module }
     events: { type: Array, default: () => [] },
+    // Entries from the "Add to calendar" dialog, owned by App.vue. Kept apart from
+    // `events` because string events there are placed by their array index.
+    addedEvents: { type: Array, default: () => [] },
+    types: { type: Array, default: () => [] },
+    modules: { type: Array, default: () => [] },
     startHour: { type: Number, default: 6 },
     endHour: { type: Number, default: 22 },
 });
+
+const emit = defineEmits(['addEvent']);
 
 const hourHeight = 52;
 const MINUTES_PER_DAY = 24 * 60;
@@ -63,10 +179,23 @@ const DEFAULT_DURATION = 60;
 
 const today = new Date();
 const todayIndex = (today.getDay() + 6) % 7; // 0 = Monday
+const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+const currentWeekMonday = (() => {
+    const d = new Date(todayMidnight);
+    d.setDate(d.getDate() - todayIndex);
+    return d;
+})();
+
+// Whole weeks away from the current one; the arrows move this.
+const weekOffset = ref(0);
+const shiftWeek = (delta) => {
+    weekOffset.value += delta;
+};
 
 const startOfWeek = computed(() => {
-    const d = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    d.setDate(d.getDate() - todayIndex);
+    const d = new Date(currentWeekMonday);
+    d.setDate(d.getDate() + weekOffset.value * 7);
     return d;
 });
 
@@ -75,6 +204,24 @@ const dateForIndex = (index) => {
     d.setDate(d.getDate() + index);
     return d;
 };
+
+const dateKey = (d) =>
+    d.getFullYear() +
+    '-' +
+    String(d.getMonth() + 1).padStart(2, '0') +
+    '-' +
+    String(d.getDate()).padStart(2, '0');
+
+const todayKey = dateKey(todayMidnight);
+
+const dateFromOffset = (offset) => {
+    const d = new Date(todayMidnight);
+    d.setDate(d.getDate() + offset);
+    return d;
+};
+
+// A training program advances one week per calendar week.
+const shownWeekNumber = computed(() => (props.weekNumber ?? 0) + weekOffset.value);
 
 const dayNameFmt = new Intl.DateTimeFormat('en-US', { weekday: 'long' });
 const dateFmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
@@ -172,18 +319,61 @@ const minutesOf = (value) => {
 };
 
 const WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
-const dayIndexOf = (value) => {
+// Every event gets a real date, so the week arrows can only ever surface the
+// events that actually belong to the week on screen. A bare weekday name has no
+// year attached, so it resolves within the current week.
+const weekdayDate = (index) => {
+    const d = new Date(currentWeekMonday);
+    d.setDate(d.getDate() + index);
+    return d;
+};
+
+const dateKeyOf = (value) => {
     if (value == null || value === '') return null;
-    if (value instanceof Date) return (value.getDay() + 6) % 7;
-    if (typeof value === 'number') return value >= 0 && value < 7 ? value : null;
+    if (value instanceof Date) return Number.isNaN(value.valueOf()) ? null : dateKey(value);
+    if (typeof value === 'number') return value >= 0 && value < 7 ? dateKey(weekdayDate(value)) : null;
+
+    // "2026-09-10" is already a key. Passing it through new Date() would parse it
+    // as UTC midnight, which lands on the previous day anywhere west of UTC.
+    if (ISO_DATE.test(String(value).trim())) return String(value).trim();
+
     const name = String(value).trim().toLowerCase();
     if (name.length >= 3) {
         const byName = WEEKDAYS.findIndex((d) => d.startsWith(name.slice(0, 3)));
-        if (byName !== -1) return byName;
+        if (byName !== -1) return dateKey(weekdayDate(byName));
     }
+
     const parsed = new Date(value);
-    return Number.isNaN(parsed.valueOf()) ? null : (parsed.getDay() + 6) % 7;
+    return Number.isNaN(parsed.valueOf()) ? null : dateKey(parsed);
+};
+
+const normalizeObject = (raw) => {
+    const key = dateKeyOf(raw.date ?? raw.day ?? raw.dayIndex);
+    if (key === null) return null;
+    const title = String(raw.title ?? raw.text ?? raw.name ?? '').trim();
+    if (!title) return null;
+
+    const details = {
+        description: String(raw.description ?? '').trim(),
+        module: String(raw.module ?? '').trim(),
+    };
+
+    const startMin = minutesOf(raw.start ?? raw.startTime ?? raw.from);
+    if (startMin === null) return { key, title, allDay: true, ...details };
+
+    const endMin = minutesOf(raw.end ?? raw.endTime ?? raw.to);
+    return {
+        key,
+        title,
+        startMin,
+        endMin:
+            endMin !== null && endMin > startMin
+                ? endMin
+                : Math.min(MINUTES_PER_DAY, startMin + DEFAULT_DURATION),
+        ...details,
+    };
 };
 
 const normalized = computed(() => {
@@ -193,26 +383,8 @@ const normalized = computed(() => {
         if (raw == null) return;
 
         if (typeof raw === 'object') {
-            const dayIndex = dayIndexOf(raw.date ?? raw.day ?? raw.dayIndex);
-            if (dayIndex === null) return;
-            const title = String(raw.title ?? raw.text ?? raw.name ?? '').trim();
-            if (!title) return;
-
-            const startMin = minutesOf(raw.start ?? raw.startTime ?? raw.from);
-            if (startMin === null) {
-                out.push({ dayIndex, title, allDay: true });
-                return;
-            }
-            const endMin = minutesOf(raw.end ?? raw.endTime ?? raw.to);
-            out.push({
-                dayIndex,
-                title,
-                startMin,
-                endMin:
-                    endMin !== null && endMin > startMin
-                        ? endMin
-                        : Math.min(MINUTES_PER_DAY, startMin + DEFAULT_DURATION),
-            });
+            const ev = normalizeObject(raw);
+            if (ev) out.push(ev);
             return;
         }
 
@@ -220,18 +392,47 @@ const normalized = computed(() => {
         if (!text || text === '...') return; // App.vue's pre-import placeholder
 
         // Importcal emits one entry per day, starting with today.
-        const dayIndex = (todayIndex + index) % 7;
+        const key = dateKey(dateFromOffset(index));
         for (const line of text.split(/\s*[\n;]+\s*/)) {
             const trimmed = line.trim();
             if (!trimmed) continue;
-            for (const part of splitByTimes(trimmed)) out.push({ dayIndex, ...part });
+            for (const part of splitByTimes(trimmed)) out.push({ key, ...part });
         }
     });
 
     return out;
 });
 
-const timedEvents = computed(() => normalized.value.filter((e) => !e.allDay));
+// Only the week on screen, so a late session in another week cannot stretch this
+// week's hour range.
+const weekKeys = computed(() => Array.from({ length: 7 }, (_, i) => dateKey(dateForIndex(i))));
+
+// Added activities and module occurrences for the week on screen. Weekly modules
+// never end, so they are expanded per visible day rather than stored as a list.
+const plannedEvents = computed(() =>
+    weekKeys.value.flatMap((key) =>
+        activitiesOn(key, { addedEvents: props.addedEvents, modules: props.modules, types: props.types })
+            .map((a) => {
+                const ev = normalizeObject({
+                    date: key,
+                    title: a.title,
+                    start: a.start,
+                    end: a.end,
+                    description: a.description,
+                    module: a.moduleName,
+                });
+                return ev && { ...ev, typeName: a.type?.name ?? '', color: a.type?.color ?? '' };
+            })
+            .filter(Boolean)
+    )
+);
+
+const visibleEvents = computed(() => {
+    const keys = weekKeys.value;
+    return [...normalized.value.filter((e) => keys.includes(e.key)), ...plannedEvents.value];
+});
+
+const timedEvents = computed(() => visibleEvents.value.filter((e) => !e.allDay));
 
 /* ---------- visible hour range ---------- */
 
@@ -307,12 +508,13 @@ const layout = (events) => {
 const days = computed(() =>
     Array.from({ length: 7 }, (_, index) => {
         const date = dateForIndex(index);
-        const mine = normalized.value.filter((e) => e.dayIndex === index);
+        const key = dateKey(date);
+        const mine = visibleEvents.value.filter((e) => e.key === key);
         return {
-            key: index,
+            key,
             name: dayNameFmt.format(date),
             dateLabel: dateFmt.format(date),
-            isToday: index === todayIndex,
+            isToday: key === todayKey,
             allDay: mine.filter((e) => e.allDay),
             timed: layout(mine.filter((e) => !e.allDay)),
         };
@@ -324,6 +526,7 @@ const eventStyle = (ev) => ({
     height: Math.max(24, ((ev.endMin - ev.startMin) / 60) * hourHeight - 3) + 'px',
     left: 'calc(' + (ev.lane / ev.lanes) * 100 + '% + 2px)',
     width: 'calc(' + (1 / ev.lanes) * 100 + '% - 4px)',
+    ...(ev.color ? { '--type': ev.color } : {}),
 });
 
 /* ---------- "now" marker ---------- */
@@ -344,14 +547,142 @@ const nowOffset = computed(() => {
     if (nowMinutes.value < start * 60 || nowMinutes.value > end * 60) return null;
     return ((nowMinutes.value - start * 60) / 60) * hourHeight;
 });
+
+const eventTooltip = (ev) =>
+    [
+        ev.timeLabel ? ev.timeLabel + ' ' + ev.title : ev.title,
+        ev.typeName && 'Type: ' + ev.typeName,
+        ev.module && ev.module !== ev.title && 'Module: ' + ev.module,
+        ev.description,
+    ]
+        .filter(Boolean)
+        .join('\n');
+
+/* ---------- "Add to calendar" dialog ---------- */
+
+const showAdd = ref(false);
+const titleInput = ref(null);
+const moduleSelect = ref(null);
+const formError = ref('');
+// mode 'new' is a one-off activity; 'module' places an existing module on a day.
+// `timed` only applies to module placements, which may be all day.
+const form = reactive({
+    mode: 'new',
+    title: '',
+    date: '',
+    start: '',
+    end: '',
+    timed: true,
+    description: '',
+    typeId: '',
+    moduleId: '',
+});
+
+const formTypeColor = computed(() => props.types.find((t) => t.id === form.typeId)?.color ?? '');
+
+const chosenModule = computed(() => props.modules.find((m) => m.id === form.moduleId) ?? null);
+const chosenModuleType = computed(() => props.types.find((t) => t.id === chosenModule.value?.typeId) ?? null);
+
+const focusFirstField = () =>
+    nextTick(() => (form.mode === 'module' && moduleSelect.value ? moduleSelect.value : titleInput.value)?.focus());
+
+// Each tab starts clean; only the date and times carry across.
+const setMode = (mode) => {
+    if (form.mode === mode) return;
+    Object.assign(form, { mode, title: '', description: '', typeId: '', moduleId: '', timed: true });
+    formError.value = '';
+    focusFirstField();
+};
+
+// Picking a module fills in its details. Header, description and time stay editable.
+const applyModule = () => {
+    const m = chosenModule.value;
+    if (!m) return;
+    form.title = m.title;
+    form.description = m.description;
+    form.timed = Boolean(m.start);
+    if (m.start) {
+        form.start = m.start;
+        form.end = m.end;
+    }
+};
+
+const openAdd = () => {
+    // Default to today when it is on screen, otherwise the Monday being viewed.
+    const onToday = weekKeys.value.includes(todayKey);
+    const hour = onToday ? Math.min(22, new Date().getHours() + 1) : 9;
+
+    Object.assign(form, {
+        mode: 'new',
+        title: '',
+        date: onToday ? todayKey : weekKeys.value[0],
+        start: pad(hour) + ':00',
+        end: pad(hour + 1) + ':00',
+        timed: true,
+        description: '',
+        typeId: '',
+        moduleId: '',
+    });
+    formError.value = '';
+    showAdd.value = true;
+    focusFirstField();
+};
+
+const closeAdd = () => {
+    showAdd.value = false;
+};
+
+const localDate = (key) => {
+    const [y, m, d] = key.split('-').map(Number);
+    return new Date(y, m - 1, d);
+};
+
+// Whole days via UTC so a DST change between the two dates cannot skew the count.
+const dayNumber = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 86400000;
+
+const submitAdd = () => {
+    const fromModule = form.mode === 'module';
+    const timed = !fromModule || form.timed;
+    const title = form.title.trim();
+    const startMin = minutesOf(form.start);
+    const endMin = minutesOf(form.end);
+
+    if (fromModule && !chosenModule.value) formError.value = 'Choose a module.';
+    else if (!title) formError.value = 'Give it a header.';
+    else if (!ISO_DATE.test(form.date)) formError.value = 'Pick a date.';
+    else if (timed && (startMin === null || endMin === null)) formError.value = 'Set both a from and a to time.';
+    else if (timed && endMin <= startMin) formError.value = 'The to time has to be after the from time.';
+    else formError.value = '';
+
+    if (formError.value) return;
+
+    emit('addEvent', {
+        title,
+        date: form.date,
+        start: timed ? form.start : '',
+        end: timed ? form.end : '',
+        description: form.description.trim(),
+        // A module placement keeps no type of its own, so it follows the module's
+        // type even if that is changed later (see activitiesOn in planner.js).
+        typeId: fromModule ? '' : form.typeId,
+        moduleId: fromModule ? form.moduleId : '',
+    });
+
+    // Jump to the new entry's week so it does not vanish into one off screen.
+    const date = localDate(form.date);
+    const monday = dayNumber(date) - ((date.getDay() + 6) % 7);
+    weekOffset.value = Math.round((monday - dayNumber(currentWeekMonday)) / 7);
+
+    closeAdd();
+};
 </script>
 
 <style scoped>
 .calendar {
-    background: #fff;
+    background: var(--surface);
     border-radius: 10px;
     padding: 16px;
-    color: #1f2328;
+    color: var(--text);
     text-align: left;
 }
 
@@ -368,8 +699,31 @@ const nowOffset = computed(() => {
 }
 
 .week-label {
-    color: #6b7280;
+    color: var(--text-muted);
     font-size: 0.9rem;
+}
+
+.nav {
+    display: flex;
+    gap: 6px;
+    margin-left: auto;
+}
+
+.arrow {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    line-height: 1;
+    font-size: 1.1rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    cursor: pointer;
+}
+
+.arrow:hover {
+    background: var(--surface-hover);
 }
 
 .cal-scroll {
@@ -381,17 +735,17 @@ const nowOffset = computed(() => {
     grid-template-columns: 58px repeat(7, minmax(120px, 1fr));
     grid-template-rows: auto auto 1fr;
     min-width: 760px;
-    background: #fff;
-    border: 1px solid #e5e7eb;
+    background: var(--surface);
+    border: 1px solid var(--border);
     border-radius: 8px;
     overflow: hidden;
 }
 
 /* header row */
 .corner {
-    background: #fafafa;
-    border-bottom: 1px solid #e5e7eb;
-    border-right: 1px solid #e5e7eb;
+    background: var(--surface-muted);
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
 }
 
 .allday-corner {
@@ -400,7 +754,7 @@ const nowOffset = computed(() => {
     justify-content: flex-end;
     padding: 4px 6px;
     font-size: 0.7rem;
-    color: #9ca3af;
+    color: var(--text-faint);
 }
 
 .day-head {
@@ -409,9 +763,9 @@ const nowOffset = computed(() => {
     align-items: center;
     gap: 2px;
     padding: 8px 4px;
-    background: #fafafa;
-    border-bottom: 1px solid #e5e7eb;
-    border-right: 1px solid #f1f2f4;
+    background: var(--surface-muted);
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border-faint);
 }
 
 .day-head:last-of-type {
@@ -425,12 +779,12 @@ const nowOffset = computed(() => {
 
 .day-date {
     font-size: 0.75rem;
-    color: #6b7280;
+    color: var(--text-muted);
 }
 
 .day-head.today .day-name,
 .day-head.today .day-date {
-    color: #1d4ed8;
+    color: var(--accent-text);
 }
 
 /* untimed strip */
@@ -440,8 +794,8 @@ const nowOffset = computed(() => {
     gap: 3px;
     min-height: 30px;
     padding: 4px;
-    border-bottom: 1px solid #e5e7eb;
-    border-right: 1px solid #f1f2f4;
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border-faint);
 }
 
 .allday-cell:last-of-type {
@@ -449,13 +803,13 @@ const nowOffset = computed(() => {
 }
 
 .allday-cell.today {
-    background: #f8faff;
+    background: var(--today-col);
 }
 
 .chip {
-    background: #eef2ff;
-    color: #3730a3;
-    border-left: 3px solid #6366f1;
+    background: var(--chip-bg);
+    color: var(--chip-text);
+    border-left: 3px solid var(--chip-accent);
     border-radius: 4px;
     padding: 3px 6px;
     font-size: 0.75rem;
@@ -465,8 +819,8 @@ const nowOffset = computed(() => {
 
 /* time gutter */
 .gutter {
-    background: #fafafa;
-    border-right: 1px solid #e5e7eb;
+    background: var(--surface-muted);
+    border-right: 1px solid var(--border);
 }
 
 .hour-label {
@@ -479,7 +833,7 @@ const nowOffset = computed(() => {
     top: -7px;
     right: 6px;
     font-size: 0.7rem;
-    color: #9ca3af;
+    color: var(--text-faint);
 }
 
 .hour-label:first-child span {
@@ -489,7 +843,7 @@ const nowOffset = computed(() => {
 /* day columns */
 .day-col {
     position: relative;
-    border-right: 1px solid #f1f2f4;
+    border-right: 1px solid var(--border-faint);
 }
 
 .day-col:last-of-type {
@@ -497,12 +851,12 @@ const nowOffset = computed(() => {
 }
 
 .day-col.today {
-    background: #f8faff;
+    background: var(--today-col);
 }
 
 .hour-cell {
     height: var(--hour-height);
-    border-top: 1px solid #f1f2f4;
+    border-top: 1px solid var(--border-faint);
 }
 
 .hour-cell:first-child {
@@ -518,11 +872,28 @@ const nowOffset = computed(() => {
     overflow: hidden;
     padding: 3px 5px;
     border-radius: 5px;
-    border-left: 3px solid #2563eb;
-    background: #dbeafe;
-    color: #1e3a8a;
+    border-left: 3px solid var(--accent);
+    background: var(--event-bg);
+    color: var(--event-text);
     font-size: 0.75rem;
     line-height: 1.2;
+}
+
+/* Activities with a type take its color; the text stays dark so any color reads. */
+.event.typed,
+.chip.typed {
+    border-left-color: var(--type);
+    background: color-mix(in srgb, var(--type) 22%, var(--surface));
+    color: var(--text);
+}
+
+.swatch {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    margin-left: 4px;
+    border-radius: 50%;
+    vertical-align: middle;
 }
 
 .event-time {
@@ -541,7 +912,7 @@ const nowOffset = computed(() => {
     left: 0;
     right: 0;
     height: 2px;
-    background: #ef4444;
+    background: var(--now);
     pointer-events: none;
 }
 
@@ -553,6 +924,300 @@ const nowOffset = computed(() => {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: #ef4444;
+    background: var(--now);
+}
+
+/* add button */
+.cal-foot {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 12px;
+}
+
+.add-btn,
+.btn-primary {
+    padding: 8px 14px;
+    border: 1px solid var(--accent-hover);
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.add-btn:hover,
+.btn-primary:hover {
+    background: var(--accent-hover);
+}
+
+.btn-secondary {
+    padding: 8px 14px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+}
+
+.btn-secondary:hover {
+    background: var(--surface-hover);
+}
+
+/* overlay */
+.overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    background: var(--overlay);
+}
+
+.dialog {
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    max-width: 460px;
+    max-height: calc(100vh - 32px);
+    overflow-x: hidden;
+    overflow-y: auto;
+    padding: 20px;
+    border-radius: 12px;
+    background: var(--surface);
+    color: var(--text);
+    text-align: left;
+    box-shadow: var(--shadow-lg);
+}
+
+.dialog h2 {
+    margin: 0 0 4px;
+    font-size: 1.2rem;
+}
+
+.field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+}
+
+.field > span {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-label);
+}
+
+.field input,
+.field select,
+.field textarea {
+    box-sizing: border-box;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+}
+
+.field textarea {
+    resize: vertical;
+    min-height: 80px;
+    overflow-x: hidden;
+}
+
+.field input:focus,
+.field select:focus,
+.field textarea:focus {
+    outline: 2px solid var(--focus);
+    outline-offset: 0;
+    border-color: var(--accent);
+}
+
+.field-row {
+    display: flex;
+    gap: 12px;
+}
+
+.form-error {
+    margin: 0;
+    padding: 8px 10px;
+    border-radius: 6px;
+    background: var(--danger-bg);
+    color: var(--danger-text);
+    font-size: 0.85rem;
+}
+
+.btn-primary:disabled {
+    opacity: 0.5;
+    cursor: default;
+}
+
+/* New activity | From module */
+.mode-tabs {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+    padding: 4px;
+    border-radius: 10px;
+    background: var(--surface-sunken);
+}
+
+.mode-tab {
+    padding: 8px 10px;
+    border: none;
+    border-radius: 7px;
+    background: transparent;
+    color: var(--text-label);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.mode-tab:hover:not(.on) {
+    color: var(--text);
+}
+
+.mode-tab.on {
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: 0 1px 3px rgba(16, 24, 40, 0.12);
+}
+
+.mode-tab:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+}
+
+.mode-empty {
+    margin: 0;
+    padding: 14px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 8px;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    text-align: center;
+}
+
+.module-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    background: var(--surface-muted);
+    font-size: 0.85rem;
+}
+
+.summary-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-label);
+}
+
+.summary-none {
+    color: var(--text-muted);
+}
+
+.summary-note {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: var(--text-faint);
+}
+
+.type-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 1px 8px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--type) 18%, var(--surface));
+    color: var(--text);
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.type-pill::before {
+    content: '';
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--type);
+}
+
+/* on/off switch, matching the one in the module dialog */
+.option {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.option-hint {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+}
+
+.switch {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--text);
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.switch-track {
+    position: relative;
+    flex: none;
+    width: 36px;
+    height: 20px;
+    border-radius: 999px;
+    background: var(--border-strong);
+    transition: background 0.15s;
+}
+
+.switch-knob {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    transition: transform 0.15s;
+}
+
+.switch[aria-checked='true'] .switch-track {
+    background: var(--accent);
+}
+
+.switch[aria-checked='true'] .switch-knob {
+    transform: translateX(16px);
+}
+
+.switch:focus-visible .switch-track {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+}
+
+.dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 4px;
 }
 </style>
