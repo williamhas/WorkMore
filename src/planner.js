@@ -5,9 +5,13 @@
 //   module:     { id, title, typeId, description, days: [0-6, 0 = Monday],
 //                 start: 'HH:MM' | '', end: 'HH:MM' | '', repeat: boolean,
 //                 weekStart: 'YYYY-MM-DD' (Monday; only used when repeat is off) }
-//   addedEvent: { title, date: 'YYYY-MM-DD', start, end, description, typeId, moduleId }
+//   addedEvent: { id, title, date: 'YYYY-MM-DD', start, end, description, typeId, moduleId }
+// Stored per account in Supabase (see store.js and supabase/schema.sql).
 
 export const WEEKDAY_SHORT = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+// Colors offered for types, also used to color types created by an import.
+export const TYPE_PALETTE = ['#22c55e', '#3b82f6', '#f97316', '#ef4444', '#a855f7', '#14b8a6', '#ec4899', '#eab308', '#64748b'];
 
 const pad = (n) => String(n).padStart(2, '0');
 
@@ -23,10 +27,16 @@ export const weekdayIndex = (d) => (d.getDay() + 6) % 7; // 0 = Monday
 
 export const mondayOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate() - weekdayIndex(d));
 
-export const newId = () =>
-    globalThis.crypto?.randomUUID
-        ? globalThis.crypto.randomUUID()
-        : Date.now().toString(36) + Math.random().toString(36).slice(2);
+// Always a UUID: the database's id columns accept nothing else.
+export const newId = () => {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    // RFC 4122 version 4 from random bytes, for browsers without randomUUID.
+    const b = globalThis.crypto.getRandomValues(new Uint8Array(16));
+    b[6] = (b[6] & 0x0f) | 0x40;
+    b[8] = (b[8] & 0x3f) | 0x80;
+    const h = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+    return h.slice(0, 8) + '-' + h.slice(8, 12) + '-' + h.slice(12, 16) + '-' + h.slice(16, 20) + '-' + h.slice(20);
+};
 
 export const moduleOccursOn = (module, key) => {
     const date = parseKey(key);
@@ -47,6 +57,8 @@ export const activitiesOn = (key, { addedEvents = [], modules = [], types = [] }
         const module = findById(modules, e.moduleId);
         list.push({
             source: 'added',
+            id: e.id,
+            moduleId: module?.id ?? '',
             title: e.title,
             start: e.start || '',
             end: e.end || '',
@@ -60,6 +72,7 @@ export const activitiesOn = (key, { addedEvents = [], modules = [], types = [] }
         if (!moduleOccursOn(m, key)) continue;
         list.push({
             source: 'module',
+            moduleId: m.id,
             title: m.title,
             start: m.start || '',
             end: m.end || '',

@@ -14,7 +14,8 @@
     -->
     <div class="card">
         <Calendarview :weekNumber="store.currentWeekNumber" :events="store.upComingData"
-            :addedEvents="store.addedEvents" :types="store.types" :modules="store.modules" @addEvent="addEvent" />
+            :addedEvents="store.addedEvents" :types="store.types" :modules="store.modules" @addEvent="addEvent"
+            @updateEvent="updateEvent" @deleteEvent="deleteEvent" @importItems="importPlanner" />
     </div>
 </template>
 
@@ -25,7 +26,7 @@ import Calendarview from '../components/CalendarView.vue';
 // File import is switched off for now. To bring it back, restore this import and
 // the Importcal card in the template; fileData from the store is already wired for it.
 // import Importcal from '../components/Importcal.vue';
-import { addEvent, store } from '../store.js';
+import { addEvent, deleteEvent, importPlanner, store, updateEvent } from '../store.js';
 
 /* ---------- month view (for the switched-off Calendar card above) ---------- */
 

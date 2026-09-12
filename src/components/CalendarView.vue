@@ -21,8 +21,12 @@
                 <!-- untimed row -->
                 <div class="corner allday-corner">all day</div>
                 <div v-for="day in days" :key="'a-' + day.key" class="allday-cell" :class="{ today: day.isToday }">
-                    <div v-for="(ev, i) in day.allDay" :key="i" class="chip" :class="{ typed: ev.color }"
-                        :style="ev.color ? { '--type': ev.color } : null" :title="eventTooltip(ev)">{{ ev.title }}</div>
+                    <div v-for="(ev, i) in day.allDay" :key="i" class="chip"
+                        :class="{ typed: ev.color, clickable: ev.source }"
+                        :style="ev.color ? { '--type': ev.color } : null" :title="eventTooltip(ev)"
+                        :role="ev.source ? 'button' : undefined" :tabindex="ev.source ? 0 : undefined"
+                        @click="openEntry(ev)" @keydown.enter.prevent="openEntry(ev)"
+                        @keydown.space.prevent="openEntry(ev)">{{ ev.title }}</div>
                 </div>
 
                 <!-- hour labels -->
@@ -34,9 +38,12 @@
                 <div v-for="day in days" :key="'c-' + day.key" class="day-col" :class="{ today: day.isToday }">
                     <div v-for="h in hours" :key="h" class="hour-cell"></div>
 
-                    <div v-for="(ev, i) in day.timed" :key="i" class="event" :class="{ typed: ev.color }"
-                        :style="eventStyle(ev)"
-                        :title="eventTooltip(ev)">
+                    <!-- Imported program text has no source and stays read-only; everything else opens. -->
+                    <div v-for="(ev, i) in day.timed" :key="i" class="event"
+                        :class="{ typed: ev.color, clickable: ev.source }" :style="eventStyle(ev)"
+                        :title="eventTooltip(ev)" :role="ev.source ? 'button' : undefined"
+                        :tabindex="ev.source ? 0 : undefined" @click="openEntry(ev)"
+                        @keydown.enter.prevent="openEntry(ev)" @keydown.space.prevent="openEntry(ev)">
                         <span class="event-time">{{ ev.timeLabel }}</span>
                         <span class="event-title">{{ ev.title }}</span>
                     </div>
@@ -48,6 +55,8 @@
         </div>
 
         <div class="cal-foot">
+            <CalendarTransfer :addedEvents="addedEvents" :modules="modules" :types="types"
+                @import="emit('importItems', $event)" />
             <button class="add-btn" type="button" @click="openAdd">+ Add to calendar</button>
         </div>
 
@@ -55,9 +64,10 @@
             <div v-if="showAdd" class="overlay" @click.self="closeAdd" @keydown.esc="closeAdd">
                 <form class="dialog" role="dialog" aria-modal="true" aria-labelledby="add-event-heading" novalidate
                     @submit.prevent="submitAdd">
-                    <h2 id="add-event-heading">Add to calendar</h2>
+                    <h2 id="add-event-heading">{{ form.editingId ? 'Edit activity' : 'Add to calendar' }}</h2>
 
-                    <div class="mode-tabs" role="tablist" aria-label="What to add">
+                    <!-- Editing keeps an entry's kind, so the tabs are only for adding. -->
+                    <div v-if="!form.editingId" class="mode-tabs" role="tablist" aria-label="What to add">
                         <button type="button" role="tab" class="mode-tab" :class="{ on: form.mode === 'new' }"
                             :aria-selected="form.mode === 'new'" @click="setMode('new')">New activity</button>
                         <button type="button" role="tab" class="mode-tab" :class="{ on: form.mode === 'module' }"
@@ -71,7 +81,7 @@
                         </p>
 
                         <template v-else>
-                            <label class="field">
+                            <label v-if="!form.editingId" class="field">
                                 <span>Module</span>
                                 <select ref="moduleSelect" v-model="form.moduleId" @change="applyModule">
                                     <option value="" disabled>Choose a module</option>
@@ -80,6 +90,10 @@
                             </label>
 
                             <div v-if="chosenModule" class="module-summary">
+                                <template v-if="form.editingId">
+                                    <span class="summary-label">Module</span>
+                                    <span class="summary-module">{{ chosenModule.title }}</span>
+                                </template>
                                 <span class="summary-label">Type</span>
                                 <span v-if="chosenModuleType" class="type-pill"
                                     :style="{ '--type': chosenModuleType.color }">{{ chosenModuleType.name }}</span>
@@ -100,7 +114,7 @@
                             <input v-model="form.date" type="date" />
                         </label>
 
-                        <div v-if="form.mode === 'module'" class="option">
+                        <div v-if="timeOptional" class="option">
                             <button type="button" role="switch" class="switch" :aria-checked="form.timed"
                                 @click="form.timed = !form.timed">
                                 <span class="switch-track"><span class="switch-knob"></span></span>
@@ -109,7 +123,7 @@
                             <span class="option-hint">{{ form.timed ? 'Only for this day' : 'Shown as all day' }}</span>
                         </div>
 
-                        <div v-if="form.mode === 'new' || form.timed" class="field-row">
+                        <div v-if="!timeOptional || form.timed" class="field-row">
                             <label class="field">
                                 <span>From</span>
                                 <input v-model="form.start" type="time" />
@@ -139,13 +153,46 @@
 
                     <p v-if="formError" class="form-error" role="alert">{{ formError }}</p>
 
-                    <div class="dialog-actions">
+                    <div v-if="confirmingDelete" class="confirm-delete" role="alert">
+                        <p><strong>Delete "{{ form.title.trim() || 'this activity' }}"?</strong> It is removed from the calendar.</p>
+                        <div class="confirm-actions">
+                            <button ref="keepButton" type="button" class="btn-secondary" @click="confirmingDelete = false">
+                                Keep it
+                            </button>
+                            <button type="button" class="btn-danger" @click="removeEntry">Delete</button>
+                        </div>
+                    </div>
+                    <div v-else class="dialog-actions">
+                        <button v-if="form.editingId" type="button" class="btn-danger-ghost" @click="askDelete">Delete</button>
                         <button type="button" class="btn-secondary" @click="closeAdd">Cancel</button>
                         <button type="submit" class="btn-primary" :disabled="form.mode === 'module' && !modules.length">
-                            Add
+                            {{ form.editingId ? 'Save changes' : 'Add' }}
                         </button>
                     </div>
                 </form>
+            </div>
+
+            <!-- A module's days are generated from the module, so they are changed there. -->
+            <div v-if="moduleInfo" class="overlay" @click.self="moduleInfo = null" @keydown.esc="moduleInfo = null">
+                <section class="dialog" role="dialog" aria-modal="true" aria-labelledby="module-info-heading">
+                    <h2 id="module-info-heading">{{ moduleInfo.title }}</h2>
+                    <div class="info-meta">
+                        <span v-if="moduleInfo.type" class="type-pill" :style="{ '--type': moduleInfo.type.color }">
+                            {{ moduleInfo.type.name }}
+                        </span>
+                        <span>{{ moduleInfo.when }}</span>
+                    </div>
+                    <p v-if="moduleInfo.description" class="info-desc">{{ moduleInfo.description }}</p>
+                    <p class="info-note">
+                        <i class="pi pi-info-circle" aria-hidden="true"></i>
+                        This comes from a module, so it appears on every day the module is placed. Edit the module to
+                        change it.
+                    </p>
+                    <div class="dialog-actions">
+                        <button ref="infoCloseButton" type="button" class="btn-secondary" @click="moduleInfo = null">Close</button>
+                        <button type="button" class="btn-primary" @click="editModule">Edit module</button>
+                    </div>
+                </section>
             </div>
         </Teleport>
     </div>
@@ -153,7 +200,9 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
-import { activitiesOn } from '../planner.js';
+import { useRouter } from 'vue-router';
+import CalendarTransfer from './CalendarTransfer.vue';
+import { WEEKDAY_SHORT, activitiesOn, parseKey } from '../planner.js';
 
 const props = defineProps({
     weekNumber: Number,
@@ -169,7 +218,9 @@ const props = defineProps({
     endHour: { type: Number, default: 22 },
 });
 
-const emit = defineEmits(['addEvent']);
+const emit = defineEmits(['addEvent', 'updateEvent', 'deleteEvent', 'importItems']);
+
+const router = useRouter();
 
 const hourHeight = 52;
 const MINUTES_PER_DAY = 24 * 60;
@@ -421,7 +472,15 @@ const plannedEvents = computed(() =>
                     description: a.description,
                     module: a.moduleName,
                 });
-                return ev && { ...ev, typeName: a.type?.name ?? '', color: a.type?.color ?? '' };
+                // source/activityId/moduleId say what a click on the box should open.
+                return ev && {
+                    ...ev,
+                    typeName: a.type?.name ?? '',
+                    color: a.type?.color ?? '',
+                    source: a.source,
+                    activityId: a.id ?? '',
+                    moduleId: a.moduleId ?? '',
+                };
             })
             .filter(Boolean)
     )
@@ -558,15 +617,18 @@ const eventTooltip = (ev) =>
         .filter(Boolean)
         .join('\n');
 
-/* ---------- "Add to calendar" dialog ---------- */
+/* ---------- "Add to calendar" / "Edit activity" dialog ---------- */
 
 const showAdd = ref(false);
 const titleInput = ref(null);
 const moduleSelect = ref(null);
+const keepButton = ref(null);
 const formError = ref('');
+const confirmingDelete = ref(false);
 // mode 'new' is a one-off activity; 'module' places an existing module on a day.
-// `timed` only applies to module placements, which may be all day.
+// editingId is set when an existing activity was opened from the calendar.
 const form = reactive({
+    editingId: '',
     mode: 'new',
     title: '',
     date: '',
@@ -579,6 +641,10 @@ const form = reactive({
 });
 
 const formTypeColor = computed(() => props.types.find((t) => t.id === form.typeId)?.color ?? '');
+
+// New activities need a time. Module placements, and anything being edited, may be
+// all day instead, so they get the "Specific time" switch.
+const timeOptional = computed(() => form.mode === 'module' || Boolean(form.editingId));
 
 const chosenModule = computed(() => props.modules.find((m) => m.id === form.moduleId) ?? null);
 const chosenModuleType = computed(() => props.types.find((t) => t.id === chosenModule.value?.typeId) ?? null);
@@ -613,6 +679,7 @@ const openAdd = () => {
     const hour = onToday ? Math.min(22, new Date().getHours() + 1) : 9;
 
     Object.assign(form, {
+        editingId: '',
         mode: 'new',
         title: '',
         date: onToday ? todayKey : weekKeys.value[0],
@@ -624,12 +691,83 @@ const openAdd = () => {
         moduleId: '',
     });
     formError.value = '';
+    confirmingDelete.value = false;
     showAdd.value = true;
     focusFirstField();
 };
 
 const closeAdd = () => {
     showAdd.value = false;
+    confirmingDelete.value = false;
+};
+
+// Opens a saved activity (a booking, a one-off, or a module placement) for editing.
+const openEdit = (id) => {
+    const entry = props.addedEvents.find((e) => e.id === id);
+    if (!entry) return;
+    const linked = props.modules.some((m) => m.id === entry.moduleId);
+
+    Object.assign(form, {
+        editingId: entry.id,
+        mode: linked ? 'module' : 'new',
+        title: entry.title,
+        date: entry.date,
+        start: entry.start || '09:00',
+        end: entry.end || '10:00',
+        timed: Boolean(entry.start),
+        description: entry.description ?? '',
+        typeId: entry.typeId ?? '',
+        moduleId: linked ? entry.moduleId : '',
+    });
+    formError.value = '';
+    confirmingDelete.value = false;
+    showAdd.value = true;
+    focusFirstField();
+};
+
+const askDelete = () => {
+    confirmingDelete.value = true;
+    // Land on the safe choice, so a stray Enter keeps the activity.
+    nextTick(() => keepButton.value?.focus());
+};
+
+const removeEntry = () => {
+    emit('deleteEvent', form.editingId);
+    closeAdd();
+};
+
+/* ---------- clicking a box in the calendar ---------- */
+
+const moduleInfo = ref(null);
+const infoCloseButton = ref(null);
+const shortDateFmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+
+const openModuleInfo = (moduleId) => {
+    const m = props.modules.find((x) => x.id === moduleId);
+    if (!m) return;
+    const days = [...m.days].sort((a, b) => a - b).map((i) => WEEKDAY_SHORT[i]).join(', ');
+    const time = m.start ? m.start + '–' + m.end : 'All day';
+    const repeat = m.repeat ? 'every week' : 'week of ' + shortDateFmt.format(parseKey(m.weekStart));
+    moduleInfo.value = {
+        id: m.id,
+        title: m.title,
+        type: props.types.find((t) => t.id === m.typeId) ?? null,
+        when: days + ' · ' + time + ' · ' + repeat,
+        description: m.description,
+    };
+    nextTick(() => infoCloseButton.value?.focus());
+};
+
+const openEntry = (ev) => {
+    if (ev.source === 'added') openEdit(ev.activityId);
+    else if (ev.source === 'module') openModuleInfo(ev.moduleId);
+};
+
+// Opens that module's editor on the Types & Modules page.
+const editModule = () => {
+    const id = moduleInfo.value?.id;
+    moduleInfo.value = null;
+    if (id) router.push({ name: 'library', query: { editModule: id } });
 };
 
 const localDate = (key) => {
@@ -642,7 +780,7 @@ const dayNumber = (d) => Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 
 
 const submitAdd = () => {
     const fromModule = form.mode === 'module';
-    const timed = !fromModule || form.timed;
+    const timed = !timeOptional.value || form.timed;
     const title = form.title.trim();
     const startMin = minutesOf(form.start);
     const endMin = minutesOf(form.end);
@@ -656,7 +794,7 @@ const submitAdd = () => {
 
     if (formError.value) return;
 
-    emit('addEvent', {
+    const fields = {
         title,
         date: form.date,
         start: timed ? form.start : '',
@@ -666,9 +804,11 @@ const submitAdd = () => {
         // type even if that is changed later (see activitiesOn in planner.js).
         typeId: fromModule ? '' : form.typeId,
         moduleId: fromModule ? form.moduleId : '',
-    });
+    };
+    if (form.editingId) emit('updateEvent', { id: form.editingId, ...fields });
+    else emit('addEvent', fields);
 
-    // Jump to the new entry's week so it does not vanish into one off screen.
+    // Jump to the entry's week, so a new or moved entry does not vanish off screen.
     const date = localDate(form.date);
     const monday = dayNumber(date) - ((date.getDay() + 6) % 7);
     weekOffset.value = Math.round((monday - dayNumber(currentWeekMonday)) / 7);
@@ -928,9 +1068,12 @@ const submitAdd = () => {
 }
 
 /* add button */
+/* Import / Export on the left, "Add to calendar" on the right. */
 .cal-foot {
     display: flex;
-    justify-content: flex-end;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    gap: 8px;
     margin-top: 12px;
 }
 
@@ -1212,6 +1355,115 @@ const submitAdd = () => {
 .switch:focus-visible .switch-track {
     outline: 2px solid var(--focus);
     outline-offset: 2px;
+}
+
+/* Boxes that open when clicked (not imported program text). */
+.event.clickable,
+.chip.clickable {
+    cursor: pointer;
+    transition: box-shadow 0.12s, filter 0.12s;
+}
+
+.event.clickable:hover,
+.chip.clickable:hover {
+    box-shadow: var(--shadow-md);
+    filter: brightness(1.04);
+}
+
+.event.clickable:focus-visible,
+.chip.clickable:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 1px;
+}
+
+.summary-module {
+    margin-right: 8px;
+    font-weight: 600;
+}
+
+/* Delete sits apart on the left, so it is not hit on the way to Save. */
+.btn-danger-ghost {
+    margin-right: auto;
+    padding: 8px 12px;
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: none;
+    color: var(--danger-text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.btn-danger-ghost:hover {
+    background: var(--danger-bg);
+}
+
+.btn-danger {
+    padding: 8px 14px;
+    border: 1px solid var(--danger-hover);
+    border-radius: 6px;
+    background: var(--danger);
+    color: #fff;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.btn-danger:hover {
+    background: var(--danger-hover);
+}
+
+.confirm-delete {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--danger-border);
+    border-radius: 8px;
+    background: var(--danger-bg);
+    color: var(--danger-text);
+}
+
+.confirm-delete p {
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.confirm-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+/* module info dialog */
+.info-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.88rem;
+    color: var(--text-muted);
+}
+
+.info-desc {
+    margin: 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.info-note {
+    display: flex;
+    gap: 8px;
+    margin: 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--surface-muted);
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.info-note .pi {
+    margin-top: 2px;
 }
 
 .dialog-actions {

@@ -125,6 +125,32 @@ body {
   padding: 24px 16px 48px;
 }
 
+/* The square header buttons (theme toggle, profile). Shared, because the profile
+   button lives in its own component. */
+.icon-btn {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 1rem;
+  cursor: pointer;
+}
+
+.icon-btn:hover {
+  background: var(--surface-hover);
+}
+
+.icon-btn:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+
 /* One panel per section; each component supplies its own inner padding. */
 .card {
   margin-bottom: 16px;

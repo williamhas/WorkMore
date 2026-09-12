@@ -3,9 +3,13 @@
         <div class="signin-card">
             <div class="brand-block">
                 <span class="logo" aria-hidden="true">W</span>
-                <h1>Sign in to WorkMore</h1>
-                <p class="sub">Welcome back. Sign in to see your week.</p>
+                <h1>{{ creating ? 'Create your account' : 'Sign in to WorkMore' }}</h1>
+                <p class="sub">{{ creating ? 'One account keeps your week on every device.' : 'Welcome back. Sign in to see your week.' }}</p>
             </div>
+
+            <p v-if="configError" class="config-error" role="alert">{{ configError }}</p>
+            <p v-if="linkNotice?.kind === 'error'" class="config-error" role="alert">{{ linkNotice.text }}</p>
+            <p v-if="notice || linkNotice?.kind === 'info'" class="notice" role="status">{{ notice || linkNotice.text }}</p>
 
             <form class="signin-form" novalidate @submit.prevent="submit">
                 <div class="field">
@@ -18,7 +22,8 @@
                     <label for="signin-password">Password</label>
                     <div class="password">
                         <input id="signin-password" v-model="password" :type="showPassword ? 'text' : 'password'"
-                            autocomplete="current-password" />
+                            :autocomplete="creating ? 'new-password' : 'current-password'"
+                            :placeholder="creating ? 'At least 6 characters' : ''" />
                         <button type="button" class="reveal" :aria-label="showPassword ? 'Hide password' : 'Show password'"
                             :aria-pressed="showPassword" @click="showPassword = !showPassword">
                             <i class="pi" :class="showPassword ? 'pi-eye-slash' : 'pi-eye'" aria-hidden="true"></i>
@@ -33,19 +38,31 @@
 
                 <p v-if="error" class="form-error" role="alert">{{ error }}</p>
 
-                <button type="submit" class="btn-primary" :disabled="busy">{{ busy ? 'Signing in…' : 'Sign in' }}</button>
+                <button type="submit" class="btn-primary" :disabled="busy || Boolean(configError)">
+                    {{ busy ? (creating ? 'Creating account…' : 'Signing in…') : (creating ? 'Create account' : 'Sign in') }}
+                </button>
             </form>
+
+            <p class="switch-mode">
+                {{ creating ? 'Already have an account?' : 'No account yet?' }}
+                <button type="button" class="link-btn" @click="setMode(creating ? 'signin' : 'signup')">
+                    {{ creating ? 'Sign in' : 'Create one' }}
+                </button>
+            </p>
         </div>
     </div>
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { safeRedirect, signIn } from '../auth.js';
+import { configError, linkNotice, safeRedirect, signIn, signUp } from '../auth.js';
 
 const route = useRoute();
 const router = useRouter();
+
+const mode = ref('signin'); // 'signin' | 'signup'
+const creating = computed(() => mode.value === 'signup');
 
 const emailInput = ref(null);
 const email = ref('');
@@ -53,15 +70,37 @@ const password = ref('');
 const remember = ref(true);
 const showPassword = ref(false);
 const error = ref('');
+const notice = ref('');
 const busy = ref(false);
 
 onMounted(() => emailInput.value?.focus());
+
+// The email carries over between the two modes; the password does not.
+const setMode = (next) => {
+    mode.value = next;
+    password.value = '';
+    error.value = '';
+    notice.value = '';
+    linkNotice.value = null;
+    nextTick(() => emailInput.value?.focus());
+};
 
 const submit = async () => {
     error.value = '';
     busy.value = true;
     try {
-        await signIn({ email: email.value, password: password.value, remember: remember.value });
+        const credentials = { email: email.value, password: password.value, remember: remember.value };
+        if (creating.value) {
+            const { needsConfirmation } = await signUp(credentials);
+            if (needsConfirmation) {
+                setMode('signin');
+                notice.value = 'Almost done: we sent a confirmation link to ' + email.value.trim().toLowerCase() +
+                    '. Open it, and you will be signed in.';
+                return;
+            }
+        } else {
+            await signIn(credentials);
+        }
         // Back to the page they tried to open, or the overview.
         await router.replace(safeRedirect(route.query.redirect));
     } catch (e) {
@@ -213,6 +252,54 @@ const submit = async () => {
     height: 16px;
     margin: 0;
     accent-color: var(--accent);
+}
+
+.config-error,
+.notice {
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    line-height: 1.4;
+}
+
+.config-error {
+    border: 1px solid var(--danger-border);
+    background: var(--danger-bg);
+    color: var(--danger-text);
+}
+
+.notice {
+    border: 1px solid var(--accent-border);
+    background: var(--accent-soft);
+    color: var(--text);
+}
+
+.switch-mode {
+    margin: 18px 0 0;
+    font-size: 0.88rem;
+    color: var(--text-muted);
+    text-align: center;
+}
+
+.link-btn {
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--accent-text);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.link-btn:hover {
+    text-decoration: underline;
+}
+
+.link-btn:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+    border-radius: 4px;
 }
 
 .form-error {

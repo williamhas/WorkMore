@@ -118,7 +118,8 @@
 </template>
 
 <script setup>
-import { computed, nextTick, reactive, ref } from 'vue';
+import { computed, nextTick, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 import ModalDialog from './ModalDialog.vue';
 import { WEEKDAY_SHORT, dateKey, mondayOf, newId, parseKey } from '../planner.js';
 
@@ -221,6 +222,23 @@ const openDialog = (module) => {
 
 const openNew = () => openDialog(null);
 const openEdit = (id) => openDialog(props.modules.find((m) => m.id === id) ?? null);
+
+// The calendar's "Edit module" arrives as ?editModule=<id>. Open that module once the
+// list has it (it may still be loading), then drop the query so a reload does not
+// open it again.
+const route = useRoute();
+const router = useRouter();
+
+watch(
+    () => [route.query.editModule, props.modules.length],
+    ([id]) => {
+        const module = id && props.modules.find((m) => m.id === id);
+        if (!module) return;
+        openDialog(module);
+        router.replace({ query: {} });
+    },
+    { immediate: true }
+);
 
 const closeDialog = () => {
     showDialog.value = false;

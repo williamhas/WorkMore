@@ -70,7 +70,7 @@
 <script setup>
 import { computed, nextTick, reactive, ref } from 'vue';
 import ModalDialog from './ModalDialog.vue';
-import { newId } from '../planner.js';
+import { TYPE_PALETTE as PALETTE, newId } from '../planner.js';
 
 const props = defineProps({
     types: { type: Array, default: () => [] },
@@ -79,8 +79,6 @@ const props = defineProps({
     addedEvents: { type: Array, default: () => [] },
 });
 const emit = defineEmits(['addType', 'updateType', 'deleteType']);
-
-const PALETTE = ['#22c55e', '#3b82f6', '#f97316', '#ef4444', '#a855f7', '#14b8a6', '#ec4899', '#eab308', '#64748b'];
 
 const showDialog = ref(false);
 const editing = ref(null); // the type being edited; null while creating

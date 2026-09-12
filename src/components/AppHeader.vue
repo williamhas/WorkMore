@@ -6,16 +6,17 @@
             <nav class="tabs" aria-label="Main">
                 <RouterLink to="/" class="tab" exact-active-class="active">Overview</RouterLink>
                 <RouterLink to="/library" class="tab" active-class="active">Types &amp; Modules</RouterLink>
+                <!-- Each booking step is its own page, so match on the path prefix. -->
+                <RouterLink to="/booking" class="tab" :class="{ active: route.path.startsWith('/booking') }">
+                    Booking
+                </RouterLink>
             </nav>
 
             <div class="actions">
                 <button type="button" class="icon-btn" :aria-label="themeLabel" :title="themeLabel" @click="toggleTheme">
                     <i class="pi" :class="theme === 'dark' ? 'pi-sun' : 'pi-moon'" aria-hidden="true"></i>
                 </button>
-                <!-- Stand-in until the profile icon and its menu take this spot; sign out moves in there. -->
-                <button type="button" class="icon-btn" :aria-label="signOutLabel" :title="signOutLabel" @click="leave">
-                    <i class="pi pi-sign-out" aria-hidden="true"></i>
-                </button>
+                <ProfileMenu />
             </div>
         </div>
     </header>
@@ -23,19 +24,13 @@
 
 <script setup>
 import { computed } from 'vue';
-import { RouterLink, useRouter } from 'vue-router';
+import { RouterLink, useRoute } from 'vue-router';
+import ProfileMenu from './ProfileMenu.vue';
 import { theme, toggleTheme } from '../theme.js';
-import { session, signOut } from '../auth.js';
 
-const router = useRouter();
+const route = useRoute();
 
 const themeLabel = computed(() => (theme.value === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'));
-const signOutLabel = computed(() => 'Sign out' + (session.value ? ' (' + session.value.email + ')' : ''));
-
-const leave = () => {
-    signOut();
-    router.replace({ name: 'signin' });
-};
 </script>
 
 <style scoped>
@@ -111,29 +106,6 @@ const leave = () => {
     align-items: center;
     gap: 8px;
     margin-left: auto;
-}
-
-.icon-btn {
-    display: grid;
-    place-items: center;
-    width: 36px;
-    height: 36px;
-    padding: 0;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    background: var(--surface);
-    color: var(--text);
-    font-size: 1rem;
-    cursor: pointer;
-}
-
-.icon-btn:hover {
-    background: var(--surface-hover);
-}
-
-.icon-btn:focus-visible {
-    outline: 2px solid var(--focus);
-    outline-offset: 2px;
 }
 
 @media (max-width: 560px) {
