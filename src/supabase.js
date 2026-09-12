@@ -9,9 +9,15 @@ const url = import.meta.env.VITE_SUPABASE_URL?.trim().replace(/\/(rest|auth)\/v1
 const key = import.meta.env.VITE_SUPABASE_ANON_KEY?.trim();
 
 // Without these the app still loads, and the sign-in page says what is missing.
+// Vite writes them into the site when it is built, so a hosted site needs them in
+// the host's settings, followed by a new build.
+const missingConfig = import.meta.env.DEV
+    ? 'Supabase is not set up yet: fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local and restart the dev server.'
+    : 'Supabase is not set up for this site: add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY to the hosting environment variables (Netlify: Site configuration → Environment variables), then deploy again.';
+
 export const configError =
     !url || !key
-        ? 'Supabase is not set up yet: fill in VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in .env.local and restart the dev server.'
+        ? missingConfig
         : key.startsWith('sb_secret_')
             ? 'The key in .env.local is the secret key. Use the publishable (or anon) key instead; the secret key must never be in the app.'
             : '';
