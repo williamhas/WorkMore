@@ -46,17 +46,38 @@
 
             <div class="divider"></div>
             <div class="share">
-                <label class="share-label" for="booking-link">Booking link</label>
-                <div class="share-row">
-                    <input id="booking-link" ref="linkInput" class="share-input" type="text" readonly :value="bookingLink"
-                        @focus="$event.target.select()" />
-                    <button type="button" class="copy-btn" :class="{ copied }"
-                        :aria-label="copied ? 'Copied' : 'Copy booking link'" :title="copied ? 'Copied' : 'Copy link'"
-                        @click="copyLink">
-                        <i class="pi" :class="copied ? 'pi-check' : 'pi-copy'" aria-hidden="true"></i>
-                    </button>
+                <div class="share-head">
+                    <label class="share-label" for="booking-link">Your booking link</label>
+                    <button v-if="profile.bookingCode && !confirmingReplace" type="button" class="link-btn quiet small"
+                        :disabled="busy" title="Make a new link; the current one stops working"
+                        @click="confirmingReplace = true">Replace</button>
                 </div>
-                <span class="copy-status" role="status">{{ copied ? 'Copied to the clipboard' : copyError }}</span>
+
+                <template v-if="profile.bookingCode">
+                    <div class="share-row">
+                        <input id="booking-link" ref="linkInput" class="share-input" type="text" readonly
+                            :value="bookingLink" @focus="$event.target.select()" />
+                        <button type="button" class="copy-btn" :class="{ copied }"
+                            :aria-label="copied ? 'Copied' : 'Copy booking link'" :title="copied ? 'Copied' : 'Copy link'"
+                            @click="copyLink">
+                            <i class="pi" :class="copied ? 'pi-check' : 'pi-copy'" aria-hidden="true"></i>
+                        </button>
+                    </div>
+                    <div v-if="confirmingReplace" class="replace-confirm" role="alert">
+                        <p>The current link stops working. Anyone who has it will need the new one.</p>
+                        <div class="replace-actions">
+                            <button ref="keepLinkButton" type="button" class="small-btn" @click="confirmingReplace = false">
+                                Keep it
+                            </button>
+                            <button type="button" class="small-btn danger" @click="replaceLink">Replace link</button>
+                        </div>
+                    </div>
+                    <span class="copy-status" role="status">{{ copied ? 'Copied to the clipboard' : copyError }}</span>
+                    <span v-if="!profile.displayName" class="share-hint">
+                        Add your name above, so visitors see who they are booking.
+                    </span>
+                </template>
+                <p v-else class="share-hint">Run the latest supabase/schema.sql in Supabase to get your personal link.</p>
             </div>
 
             <div class="divider"></div>
@@ -72,7 +93,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import { session, signOut } from '../auth.js';
-import { MAX_NAME_LENGTH, profile, removeAvatar, saveDisplayName, uploadAvatar } from '../profile.js';
+import { MAX_NAME_LENGTH, profile, removeAvatar, replaceBookingCode, saveDisplayName, uploadAvatar } from '../profile.js';
 
 const router = useRouter();
 
@@ -88,18 +109,33 @@ const nameDraft = ref('');
 
 const email = computed(() => session.value?.email ?? '');
 
-// Built from where the app is running, so it is http://localhost:5173/#/booking in
-// development and follows the app to wherever it is hosted later.
+// Built from where the app is running plus this account's code, so it follows the
+// app to wherever it is hosted (http://localhost:5173/#/book/<code> in development).
 const linkInput = ref(null);
-const bookingLink = window.location.origin + window.location.pathname + router.resolve({ name: 'booking' }).href;
+const keepLinkButton = ref(null);
+const bookingLink = computed(() =>
+    profile.bookingCode
+        ? window.location.origin + window.location.pathname + router.resolve({ name: 'book', params: { code: profile.bookingCode } }).href
+        : ''
+);
 const copied = ref(false);
 const copyError = ref('');
+const confirmingReplace = ref(false);
 let copiedTimer = null;
+
+// Land on "Keep it", so a stray Enter does not break a link that is in use.
+watch(confirmingReplace, (asking) => asking && nextTick(() => keepLinkButton.value?.focus()));
+
+const replaceLink = async () => {
+    confirmingReplace.value = false;
+    copied.value = false;
+    await run(replaceBookingCode);
+};
 
 const copyLink = async () => {
     copyError.value = '';
     try {
-        await navigator.clipboard.writeText(bookingLink);
+        await navigator.clipboard.writeText(bookingLink.value);
     } catch {
         // Clipboard access can be refused; fall back to copying the selected text.
         linkInput.value?.select();
@@ -120,6 +156,7 @@ const close = (refocus = false) => {
     error.value = '';
     copied.value = false;
     copyError.value = '';
+    confirmingReplace.value = false;
     if (refocus) trigger.value?.focus();
 };
 
@@ -407,6 +444,67 @@ const logOut = async () => {
     display: flex;
     flex-direction: column;
     gap: 6px;
+}
+
+.share-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+}
+
+.link-btn.small {
+    font-size: 0.75rem;
+}
+
+.share-hint {
+    margin: 0;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+}
+
+.replace-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--danger-border);
+    border-radius: 8px;
+    background: var(--danger-bg);
+    color: var(--danger-text);
+    font-size: 0.78rem;
+}
+
+.replace-confirm p {
+    margin: 0;
+}
+
+.replace-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+}
+
+.small-btn {
+    padding: 4px 10px;
+    border: 1px solid var(--border-strong);
+    border-radius: 6px;
+    background: var(--surface);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.small-btn.danger {
+    border-color: var(--danger-hover);
+    background: var(--danger);
+    color: #fff;
+}
+
+.small-btn:focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
 }
 
 .share-label {

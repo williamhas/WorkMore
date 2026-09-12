@@ -16,23 +16,31 @@ export const router = createRouter({
         { path: '/', name: 'overview', component: OverviewPage, meta: { title: 'Overview' } },
         { path: '/library', name: 'library', component: LibraryPage, meta: { title: 'Types & Modules' } },
 
-        // Booking a meeting, one step per page so the back button works. A step
-        // reached without the earlier ones done (a reload, a typed address) goes back.
-        { path: '/booking', name: 'booking', component: BookingPage, meta: { title: 'Book a meeting' } },
-        { path: '/booking/details', name: 'booking-details', component: BookingPage, meta: { title: 'Book a meeting' } },
+        // A person's public booking link, open to anyone who has it (no sign-in). One
+        // step per page so the back button works; a step reached without the earlier
+        // ones done (a reload, a typed address) goes back to where it should start.
+        { path: '/book/:code', name: 'book', component: BookingPage, meta: { title: 'Book a meeting', public: true } },
         {
-            path: '/booking/time',
-            name: 'booking-time',
+            path: '/book/:code/details',
+            name: 'book-details',
             component: BookingPage,
-            meta: { title: 'Book a meeting' },
-            beforeEnter: () => (detailsProblem() ? { name: 'booking-details' } : true),
+            meta: { title: 'Book a meeting', public: true },
         },
         {
-            path: '/booking/confirmed',
-            name: 'booking-confirmed',
+            path: '/book/:code/time',
+            name: 'book-time',
             component: BookingPage,
-            meta: { title: 'Meeting booked' },
-            beforeEnter: () => (booking.confirmed ? true : { name: 'booking' }),
+            meta: { title: 'Book a meeting', public: true },
+            beforeEnter: (to) =>
+                booking.code === to.params.code && !detailsProblem() ? true : { name: 'book-details', params: to.params },
+        },
+        {
+            path: '/book/:code/confirmed',
+            name: 'book-confirmed',
+            component: BookingPage,
+            meta: { title: 'Meeting booked', public: true },
+            beforeEnter: (to) =>
+                booking.code === to.params.code && booking.confirmed ? true : { name: 'book', params: to.params },
         },
 
         { path: '/:pathMatch(.*)*', redirect: '/' },

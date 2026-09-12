@@ -232,31 +232,8 @@ export const updateModule = (module) => {
     save(() => supabase.from('modules').update(withoutId(moduleToRow(module))).eq('id', module.id), 'the module');
 };
 
-// A booked meeting goes into the calendar as "Meeting with <name>", typed "Meeting".
-// An existing type of that name is reused (any capitalisation); otherwise an orange
-// one is created first. Saves run in order, so the type exists before the meeting.
-const MEETING_COLOR = '#f97316';
-
-export const bookMeeting = ({ name, email, date, start, end, about = '' }) => {
-    let type = store.types.find((t) => t.name.trim().toLowerCase() === 'meeting');
-    if (!type) {
-        type = { id: newId(), name: 'Meeting', color: MEETING_COLOR };
-        addType(type);
-    }
-    const meeting = {
-        id: newId(),
-        title: 'Meeting with ' + name,
-        date,
-        start,
-        end,
-        // What they wrote comes first, then who booked it.
-        description: (about ? about + '\n\n' : '') + 'Booked by ' + name + ' (' + email + ')',
-        typeId: type.id,
-        moduleId: '',
-    };
-    addEvent(meeting);
-    return meeting;
-};
+// Meetings booked through a booking link are created by the database's book_meeting
+// function (supabase/schema.sql) and show up here on the next load.
 
 // A module's own days disappear with it; activities linked to it are unlinked.
 export const deleteModule = (id) => {

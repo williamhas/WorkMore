@@ -6,6 +6,7 @@
 // this browser's local time.
 
 import { TYPE_PALETTE, dateKey, mondayOf, moduleOccursOn, newId, parseKey, weekdayIndex } from './planner.js';
+import { zoneExists, zonedInstant } from './timezone.js';
 
 const ICS_DAYS = ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']; // index 0 = Monday, as in the planner
 const MINUTES_PER_DAY = 24 * 60;
@@ -180,44 +181,6 @@ const readEvents = (text) => {
         if (current && depth === 0 && !(line.name in current)) current[line.name] = line;
     }
     return events;
-};
-
-const zoneExists = (tz) => {
-    try {
-        new Intl.DateTimeFormat('en-US', { timeZone: tz });
-        return true;
-    } catch {
-        return false;
-    }
-};
-
-// Minutes a time zone is ahead of UTC at a given instant.
-const zoneOffset = (instant, tz) => {
-    const parts = Object.fromEntries(
-        new Intl.DateTimeFormat('en-US', {
-            timeZone: tz,
-            hourCycle: 'h23',
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit',
-        })
-            .formatToParts(instant)
-            .map((p) => [p.type, p.value])
-    );
-    const asUtc = Date.UTC(+parts.year, +parts.month - 1, +parts.day, +parts.hour, +parts.minute, +parts.second);
-    return (asUtc - instant.getTime()) / 60000;
-};
-
-// The instant a wall-clock time in `tz` refers to. The second pass settles times
-// near a daylight-saving change.
-const zonedInstant = (y, mo, d, h, mi, tz) => {
-    const wall = Date.UTC(y, mo - 1, d, h, mi);
-    let guess = wall - zoneOffset(new Date(wall), tz) * 60000;
-    guess = wall - zoneOffset(new Date(guess), tz) * 60000;
-    return new Date(guess);
 };
 
 // DTSTART / DTEND -> { date: 'YYYY-MM-DD', time: 'HH:MM' | '' } in local time, or null.

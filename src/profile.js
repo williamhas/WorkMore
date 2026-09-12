@@ -1,12 +1,14 @@
-// The signed-in account's profile: its name and picture. Pictures live in the
-// Supabase Storage bucket "avatars" under <user id>/avatar.jpg; the profiles table
-// keeps the URL and the name. Bucket and access rules are set up in supabase/schema.sql.
+// The signed-in account's profile: its name, picture, booking link code and time
+// zone. Pictures live in the Supabase Storage bucket "avatars" under
+// <user id>/avatar.jpg; the profiles table keeps the rest. Set up in supabase/schema.sql.
 
 import { reactive, watch } from 'vue';
 import { supabase } from './supabase.js';
 import { session } from './auth.js';
+import { localZone } from './timezone.js';
 
-export const profile = reactive({ avatarUrl: '', displayName: '' });
+// bookingCode is '' until the booking-link part of schema.sql has been run.
+export const profile = reactive({ avatarUrl: '', displayName: '', bookingCode: '' });
 
 export const MAX_NAME_LENGTH = 60;
 
@@ -25,11 +27,20 @@ watch(
         const load = ++latestLoad;
         profile.avatarUrl = '';
         profile.displayName = '';
+        profile.bookingCode = '';
         if (!supabase || !userId) return;
-        const { data } = await supabase.from('profiles').select('avatar_url, display_name').eq('id', userId).maybeSingle();
+        // All columns, so this still works before newer columns exist.
+        const { data } = await supabase.from('profiles').select('*').eq('id', userId).maybeSingle();
         if (load !== latestLoad) return;
         profile.avatarUrl = data?.avatar_url ?? '';
         profile.displayName = data?.display_name ?? '';
+        profile.bookingCode = data?.booking_code ?? '';
+
+        // Visitors see booking times in the host's time zone, so keep it current.
+        const zone = localZone();
+        if (data && 'time_zone' in data && data.time_zone !== zone) {
+            supabase.from('profiles').update({ time_zone: zone }).eq('id', userId).then(() => {});
+        }
     },
     { immediate: true }
 );
@@ -85,6 +96,23 @@ export const uploadAvatar = async (file) => {
     const { error } = await supabase.from('profiles').upsert({ id: userId, avatar_url: avatarUrl });
     if (error) throw new Error(friendly(error));
     profile.avatarUrl = avatarUrl;
+};
+
+// A new random code for the booking link; the old link stops working at once.
+export const replaceBookingCode = async () => {
+    const userId = session.value?.userId;
+    if (!supabase || !userId) throw new Error('Sign in first.');
+    for (let attempt = 0; attempt < 3; attempt++) {
+        const code = [...crypto.getRandomValues(new Uint8Array(6))].map((b) => b.toString(16).padStart(2, '0')).join('');
+        const { error } = await supabase.from('profiles').update({ booking_code: code }).eq('id', userId);
+        if (!error) {
+            profile.bookingCode = code;
+            return code;
+        }
+        // 23505: that code is taken (very unlikely); try another.
+        if (error.code !== '23505') throw new Error(friendly(error));
+    }
+    throw new Error('Could not make a new link. Try again.');
 };
 
 // An empty name clears it; the app then shows the email where the name would go.

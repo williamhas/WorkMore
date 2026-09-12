@@ -6,10 +6,6 @@
             <nav class="tabs" aria-label="Main">
                 <RouterLink to="/" class="tab" exact-active-class="active">Overview</RouterLink>
                 <RouterLink to="/library" class="tab" active-class="active">Types &amp; Modules</RouterLink>
-                <!-- Each booking step is its own page, so match on the path prefix. -->
-                <RouterLink to="/booking" class="tab" :class="{ active: route.path.startsWith('/booking') }">
-                    Booking
-                </RouterLink>
             </nav>
 
             <div class="actions">
@@ -24,11 +20,9 @@
 
 <script setup>
 import { computed } from 'vue';
-import { RouterLink, useRoute } from 'vue-router';
+import { RouterLink } from 'vue-router';
 import ProfileMenu from './ProfileMenu.vue';
 import { theme, toggleTheme } from '../theme.js';
-
-const route = useRoute();
 
 const themeLabel = computed(() => (theme.value === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'));
 </script>
