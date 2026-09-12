@@ -1,0 +1,8 @@
+# Netlify build settings. The app is a static site; Supabase is called directly from
+# the browser. The two VITE_SUPABASE_* values must be set in Netlify
+# (Site configuration -> Environment variables), since .env.local is not in git.
+# The app uses #/ addresses, so no redirect rules are needed.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
