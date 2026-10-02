@@ -19,6 +19,8 @@ The soly purpose and difference with calendar is that it is based on a modular c
 
 Types are used as a general header to sort activities into broader categories and highlight each in the calendar with a specified color coding to increase visibility in the application when using it. For example, one could make the "meeting" type orange, "workout" green, and "food" red to easier spot what types of activities they have.
 
+![Types](./images/Types.png)
+
 The modules are then used to apply the same activity, during the same time on different days and weeks continuously. These are created with a header, type, time, and a description. One might always have lunch with a collegue on thursdays at 12.00. Using the type "Food", selecting a specific time (12.00) and day (Thursday) as well as selecting a repeating activity every week. Sometimes activities are only tied to days and does not need to be a specific time, like vacuuming the house every sunday. Great! Deselect the time and the activity will be shown at the top of each sunday.
 
 ### Calendar
